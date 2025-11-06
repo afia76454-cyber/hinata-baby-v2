@@ -1,5 +1,5 @@
 <img
-src="https://i.ibb.co/RQ28H2p/banner.png" alt="banner">
+src="https://i.imgur.com/Mmo26FF.jpeg" alt="banner">
 
 <h1 align="center">
   <img src="https://i.imgur.com/ZfuZrPc.jpeg" width="22px" alt="icon">
