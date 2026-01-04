@@ -7,7 +7,7 @@ const mahmud = async () => {
 
 module.exports = {
   config: {
-    name: "anisr2",
+    name: "anisr",
     author: "MahMUD",
     version: "1.7",
     category: "media",
