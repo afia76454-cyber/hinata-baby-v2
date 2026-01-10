@@ -6,15 +6,16 @@ const fs = require("fs");
 const app = express();
 app.use(bodyParser.json());
 
-// 🔑 CONFIG
-const PAGE_ACCESS_TOKEN = "YOUR_PAGE_ACCESS_TOKEN";
-const ADMINS = ["61573657085244"]; // <-- ADD YOUR FB ID HERE
+// ================= CONFIG =================
+const PAGE_ACCESS_TOKEN = "YOUR_PAGE_ACCESS_TOKEN"; // <-- REQUIRED
+const ADMINS = ["61573657085244"];                // <-- ADMIN FB ID
+const BOT_VERSION = "v1.5.35";
 const DB_FILE = "./users.json";
 
-// 🎰 SLOT SYMBOLS
-const symbols = ["🍒", "🍋", "🔔", "⭐", "🍉", "💎"];
+// ============== SLOT SYMBOLS ==============
+const SYMBOLS = ["🍒", "🍋", "🔔", "⭐", "🍉", "💎"];
 
-// 📦 LOAD / SAVE DATABASE
+// ============== DATABASE ==================
 let users = fs.existsSync(DB_FILE)
   ? JSON.parse(fs.readFileSync(DB_FILE))
   : {};
@@ -23,26 +24,25 @@ function saveDB() {
   fs.writeFileSync(DB_FILE, JSON.stringify(users, null, 2));
 }
 
-// 👤 GET USER
 function getUser(id) {
   if (!users[id]) users[id] = { coins: 500 };
   return users[id];
 }
 
-// 🎰 SLOT LOGIC
+// ============== SLOT LOGIC ================
 function spin() {
   return Array.from({ length: 3 }, () =>
-    symbols[Math.floor(Math.random() * symbols.length)]
+    SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)]
   );
 }
 
-function payout(slot, bet) {
-  if (slot[0] === slot[1] && slot[1] === slot[2]) return bet * 5;
-  if (slot[0] === slot[1] || slot[1] === slot[2]) return bet * 2;
+function payout(result, bet) {
+  if (result[0] === result[1] && result[1] === result[2]) return bet * 5;
+  if (result[0] === result[1] || result[1] === result[2]) return bet * 2;
   return 0;
 }
 
-// 📩 WEBHOOK
+// ============== WEBHOOK ===================
 app.post("/webhook", (req, res) => {
   const event = req.body.entry?.[0]?.messaging?.[0];
   if (!event || !event.message?.text) return res.sendStatus(200);
@@ -61,26 +61,36 @@ app.post("/webhook", (req, res) => {
     return send(senderId, `💰 Balance: ${user.coins} coins`);
   }
 
+  // ℹ️ VERSION
+  if (text === "/version") {
+    return send(
+      senderId,
+      `🤖 Messenger Slot Bot
+Version: ${BOT_VERSION}
+Status: Stable ✅`
+    );
+  }
+
   // 🎰 SLOT GAME
   if (text.startsWith("/slot")) {
     const bet = parseInt(text.split(" ")[1]);
 
     if (!bet || bet <= 0)
-      return send(senderId, "❌ Use: /slot 50");
+      return send(senderId, "❌ Use: /slot <amount>");
 
     if (user.coins < bet)
       return send(senderId, "💸 Not enough coins!");
 
     user.coins -= bet;
-    const s = spin();
-    const win = payout(s, bet);
+    const result = spin();
+    const win = payout(result, bet);
     user.coins += win;
     saveDB();
 
     return send(
       senderId,
       `🎰 SLOT MACHINE 🎰
-${s.join(" | ")}
+${result.join(" | ")}
 
 ${win > 0 ? "🎉 You Won " + win : "😢 You Lost"}
 💰 Balance: ${user.coins}`
@@ -108,26 +118,27 @@ ${win > 0 ? "🎉 You Won " + win : "😢 You Lost"}
     const targetId = args[1];
     const amount = parseInt(args[2]);
 
-    if (!targetId || !amount || amount <= 0) {
+    if (!targetId || !amount || amount <= 0)
       return send(senderId, "❌ Use: /addcoin USER_ID AMOUNT");
-    }
 
     if (!users[targetId]) users[targetId] = { coins: 0 };
+
     users[targetId].coins += amount;
     saveDB();
 
     return send(
       senderId,
-      `✅ Added ${amount} coins
+      `✅ Coins Added
 👤 User: ${targetId}
-💰 New Balance: ${users[targetId].coins}`
+💰 Amount: ${amount}
+💳 Balance: ${users[targetId].coins}`
     );
   }
 
   res.sendStatus(200);
 });
 
-// 📤 SEND MESSAGE
+// ============== SEND MESSAGE ==============
 function send(id, text) {
   axios.post(
     `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
@@ -138,5 +149,7 @@ function send(id, text) {
   );
 }
 
-// 🚀 START SERVER
-app.listen(3000, () => console.log("🤖 Messenger Slot Bot Running"));
+// ============== START SERVER ===============
+app.listen(3000, () =>
+  console.log(`🤖 Slot Bot ${BOT_VERSION} Running`)
+);
