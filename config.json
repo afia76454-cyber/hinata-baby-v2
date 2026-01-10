@@ -1,6 +1,6 @@
 {
   "facebookAccount": {
-    "email": "mahmudx077@gmail.com",
+    "email": "abdullahalamin2011@gmail.com",
     "password": "",
     "2FASecret": "",
     "i_user": "",
@@ -17,14 +17,14 @@
     "ignoreCommand": []
   },
   "adminBot": [
-    "100037951718438"
+    "61573657085244"
   ],
   "whiteListMode": {
     "enable": false,
     "whiteListIds": [],
     "notes": "if you enable this feature, only the ids in the whiteListIds section can use the bot"
   },
-  "nickNameBot": "Your Hinata Baby",
+  "nickNameBot": "Leaf 🌿 Bot ",
   "prefix": "!",
   "database": {
     "type": "sqlite",
