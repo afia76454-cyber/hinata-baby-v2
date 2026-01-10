@@ -1,63 +1,57 @@
+const express = require("express");
+const bodyParser = require("body-parser");
 const axios = require("axios");
-const fs = require("fs");
-const path = require("path");
 
-const mahmud = async () => {
-  const response = await axios.get("https://raw.githubusercontent.com/mahmudx7/HINATA/main/baseApiUrl.json");
-  return response.data.mahmud;
-};
+const app = express();
+app.use(bodyParser.json());
 
-module.exports = {
-  config: {
-    name: "horny",
-    aliases: ["hornyvid", "hvideo"],
-    version: "1.7",
-    role: 0,
-    author: "MahMUD",
-    category: "18+",
-    guide: {
-      en: "Use {pn} to get a random horny video."
-    }
-  },
+const PAGE_ACCESS_TOKEN = "YOUR_PAGE_ACCESS_TOKEN";
 
-  onStart: async function ({ api, event }) {
-    const obfuscatedAuthor = String.fromCharCode(77, 97, 104, 77, 85, 68); 
-    if (module.exports.config.author !== obfuscatedAuthor) {
-      return api.sendMessage("You are not authorized to change the author name.", event.threadID, event.messageID);
-    }
-    
-    try {
-      const apiUrl = await mahmud();
-      const res = await axios.get(`${apiUrl}/api/album/mahmud/videos/horny2?userID=${event.senderID}`);
-      if (!res.data.success || !res.data.videos.length)
-        return api.sendMessage("❌ | No videos found.", event.threadID, event.messageID);
+// Slot symbols
+const slots = ["🍒", "🍋", "🔔", "⭐", "🍉", "💎"];
 
-      const url = res.data.videos[Math.floor(Math.random() * res.data.videos.length)];
-      const filePath = path.join(__dirname, "temp_video.mp4");
+function spinSlot() {
+  return [
+    slots[Math.floor(Math.random() * slots.length)],
+    slots[Math.floor(Math.random() * slots.length)],
+    slots[Math.floor(Math.random() * slots.length)]
+  ];
+}
 
-      const video = await axios({
-        url,
-        method: "GET",
-        responseType: "stream",
-        headers: { 'User-Agent': 'Mozilla/5.0' }
-      });
-
-      const writer = fs.createWriteStream(filePath);
-      video.data.pipe(writer);
-
-      writer.on("finish", () => {
-        api.sendMessage({
-          body: "𝐇𝐞𝐫𝐞'𝐬 𝐲𝐨𝐮𝐫 𝐇𝐨𝐫𝐧𝐲 𝐯𝐢𝐝𝐞𝐨 <😘",
-          attachment: fs.createReadStream(filePath)
-        }, event.threadID, () => fs.unlinkSync(filePath), event.messageID);
-      });
-
-      writer.on("error", () => {
-        api.sendMessage("❌ | Download error.", event.threadID, event.messageID);
-      });
-    } catch (e) {
-      console.error("ERROR:", e);
-      api.sendMessage("🥹error, contact MahMUD.", event.threadID, event.messageID);
-    }
+function getResult(slot) {
+  if (slot[0] === slot[1] && slot[1] === slot[2]) {
+    return "🎉 JACKPOT! You Win!";
   }
-};
+  return "😢 Try Again!";
+}
+
+// Webhook
+app.post("/webhook", (req, res) => {
+  const event = req.body.entry[0].messaging[0];
+  const senderId = event.sender.id;
+  const message = event.message?.text;
+
+  if (message === "/slot") {
+    const spin = spinSlot();
+    const result = getResult(spin);
+
+    sendMessage(
+      senderId,
+      `🎰 SLOT MACHINE 🎰\n\n${spin.join(" | ")}\n\n${result}`
+    );
+  }
+
+  res.sendStatus(200);
+});
+
+function sendMessage(senderId, text) {
+  axios.post(
+    `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+    {
+      recipient: { id: senderId },
+      message: { text }
+    }
+  );
+}
+
+app.listen(3000, () => console.log("Bot running on port 3000"));
