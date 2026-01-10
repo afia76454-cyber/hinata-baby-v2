@@ -1,135 +1,142 @@
-const utils = require("../../utils.js");
+const express = require("express");
+const bodyParser = require("body-parser");
+const axios = require("axios");
+const fs = require("fs");
 
-const EMOJIS = ["🍒", "🍋", "🍉", "⭐", "💎"];
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const app = express();
+app.use(bodyParser.json());
 
-module.exports = {
-  config: {
-    name: "slot",
-    aliases: ["slots"],
-    version: "6.0",
-    author: "Rakib",
-    role: 0,
-    category: "economy"
-  },
+// 🔑 CONFIG
+const PAGE_ACCESS_TOKEN = "YOUR_PAGE_ACCESS_TOKEN";
+const ADMINS = ["61573657085244"]; // <-- ADD YOUR FB ID HERE
+const DB_FILE = "./users.json";
 
-  onStart: async function ({ api, message, event, args, usersData }) {
-    const uid = event.senderID;
-    const user = await usersData.get(uid) || {};
-    const data = user.data || {};
-    const name = user.name || "Unknown";
+// 🎰 SLOT SYMBOLS
+const symbols = ["🍒", "🍋", "🔔", "⭐", "🍉", "💎"];
 
-    /* ===== COOLDOWN ===== */
-    const now = Date.now();
-    if (now - (data.lastSlotTime || 0) < 10_000)
-      return message.reply("⏳ Please wait before spinning again.");
+// 📦 LOAD / SAVE DATABASE
+let users = fs.existsSync(DB_FILE)
+  ? JSON.parse(fs.readFileSync(DB_FILE))
+  : {};
 
-    /* ===== LOAD BALANCES (SAFE) ===== */
-    let wallet = utils.safeBigInt(user.money);
-    let bank   = utils.safeBigInt(data.bank);
+function saveDB() {
+  fs.writeFileSync(DB_FILE, JSON.stringify(users, null, 2));
+}
 
-    /* ===== BET ===== */
-    const bet = utils.parseAmount(
-      args[0],
-      "wallet",
-      wallet,
-      bank,
-      0n
-    );
+// 👤 GET USER
+function getUser(id) {
+  if (!users[id]) users[id] = { coins: 500 };
+  return users[id];
+}
 
-    if (!bet || typeof bet !== "bigint" || bet <= 0n)
-      return message.reply("❌ Invalid bet amount.");
+// 🎰 SLOT LOGIC
+function spin() {
+  return Array.from({ length: 3 }, () =>
+    symbols[Math.floor(Math.random() * symbols.length)]
+  );
+}
 
-    if (wallet < bet)
-      return message.reply("❌ You don't have enough balance.");
+function payout(slot, bet) {
+  if (slot[0] === slot[1] && slot[1] === slot[2]) return bet * 5;
+  if (slot[0] === slot[1] || slot[1] === slot[2]) return bet * 2;
+  return 0;
+}
 
-    /* ===== FINAL SYMBOLS (DECIDED FIRST) ===== */
-    const spin = () => EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
-    const A = spin();
-    const B = spin();
-    const C = spin();
+// 📩 WEBHOOK
+app.post("/webhook", (req, res) => {
+  const event = req.body.entry?.[0]?.messaging?.[0];
+  if (!event || !event.message?.text) return res.sendStatus(200);
 
-    let multiplier = 0n;
-    let finalTitle = "💀 NO MATCH!";
-    let resultLine = "";
+  const senderId = event.sender.id;
+  const text = event.message.text.toLowerCase();
+  const user = getUser(senderId);
 
-    if (A === B && B === C) {
-      multiplier = 5n;
-      finalTitle = "💎 JACKPOT! 3 MATCH!";
-    }
-    else if (A === B || B === C || A === C) {
-      multiplier = 2n;
-      finalTitle = "✨ NICE! 2 MATCH!";
-    }
+  // 🆔 USER ID
+  if (text === "/id") {
+    return send(senderId, `🆔 Your User ID:\n${senderId}`);
+  }
 
-    /* ===== BALANCE UPDATE ===== */
-    let profit = -bet;
+  // 💰 BALANCE
+  if (text === "/balance") {
+    return send(senderId, `💰 Balance: ${user.coins} coins`);
+  }
 
-    if (multiplier > 0n) {
-      profit = bet * multiplier;
-      wallet += profit;
-      resultLine = `💰 Win: +${utils.formatMoney(profit)}`;
-    }
-    else {
-      wallet -= bet;
-      resultLine = `💸 Loss: -${utils.formatMoney(bet)}`;
-    }
+  // 🎰 SLOT GAME
+  if (text.startsWith("/slot")) {
+    const bet = parseInt(text.split(" ")[1]);
 
-    /* ===== AUTO BANK LIMIT (150cs SYSTEM) ===== */
-    const fixed = utils.applyWalletLimit(wallet, bank);
-    wallet = fixed.wallet;
-    bank   = fixed.bank;
+    if (!bet || bet <= 0)
+      return send(senderId, "❌ Use: /slot 50");
 
-    /* ===== SAVE USER ===== */
-    await usersData.set(uid, {
-      ...user,
-      money: wallet.toString(),
-      data: {
-        ...data,
-        bank: bank.toString(),
-        lastSlotTime: now,
-        slotWin: (
-          utils.safeBigInt(data.slotWin) +
-          (profit > 0n ? profit : 0n)
-        ).toString()
-      }
-    });
+    if (user.coins < bet)
+      return send(senderId, "💸 Not enough coins!");
 
-    /* ===== INITIAL MESSAGE ===== */
-    const sent = await message.reply(
-      `🎰 ❓ | ❓ | ❓\n` +
-      `✨ The wheel is spinning...\n\n` +
-      `👤 Player: ${name}\n` +
-      `💵 Bet: ${utils.formatMoney(bet)}\n` +
-      `💼 Wallet: ${utils.formatMoney(wallet)}\n` +
-      `🏦 Bank: ${utils.formatMoney(bank)}`
-    );
+    user.coins -= bet;
+    const s = spin();
+    const win = payout(s, bet);
+    user.coins += win;
+    saveDB();
 
-    /* ===== EMOJI SPIN ANIMATION (≤ 4 edits) ===== */
-    for (let i = 0; i < 3; i++) {
-      await sleep(400);
-      api.editMessage(
-        `🎰 ${spin()} | ${spin()} | ${spin()}\n` +
-        `✨ The wheel is spinning...\n\n` +
-        `👤 Player: ${name}\n` +
-        `💵 Bet: ${utils.formatMoney(bet)}\n` +
-        `💼 Wallet: ${utils.formatMoney(wallet)}\n` +
-        `🏦 Bank: ${utils.formatMoney(bank)}`,
-        sent.messageID
-      );
-    }
+    return send(
+      senderId,
+      `🎰 SLOT MACHINE 🎰
+${s.join(" | ")}
 
-    /* ===== FINAL RESULT ===== */
-    await sleep(500);
-    api.editMessage(
-      `🎰 ${A} | ${B} | ${C}\n` +
-      `${resultLine}\n\n` +
-      `${finalTitle}\n\n` +
-      `👤 Player: ${name}\n` +
-      `💵 Bet: ${utils.formatMoney(bet)}\n` +
-      `💼 Wallet: ${utils.formatMoney(wallet)}\n` +
-      `🏦 Bank: ${utils.formatMoney(bank)}`,
-      sent.messageID
+${win > 0 ? "🎉 You Won " + win : "😢 You Lost"}
+💰 Balance: ${user.coins}`
     );
   }
-};
+
+  // 🏆 LEADERBOARD
+  if (text === "/top") {
+    const top = Object.entries(users)
+      .sort((a, b) => b[1].coins - a[1].coins)
+      .slice(0, 5)
+      .map((u, i) => `${i + 1}. ${u[1].coins} coins`)
+      .join("\n");
+
+    return send(senderId, `🏆 TOP PLAYERS 🏆\n${top || "No players yet"}`);
+  }
+
+  // 👑 ADMIN ADD COINS
+  if (text.startsWith("/addcoin")) {
+    if (!ADMINS.includes(senderId)) {
+      return send(senderId, "⛔ Admin only command.");
+    }
+
+    const args = text.split(" ");
+    const targetId = args[1];
+    const amount = parseInt(args[2]);
+
+    if (!targetId || !amount || amount <= 0) {
+      return send(senderId, "❌ Use: /addcoin USER_ID AMOUNT");
+    }
+
+    if (!users[targetId]) users[targetId] = { coins: 0 };
+    users[targetId].coins += amount;
+    saveDB();
+
+    return send(
+      senderId,
+      `✅ Added ${amount} coins
+👤 User: ${targetId}
+💰 New Balance: ${users[targetId].coins}`
+    );
+  }
+
+  res.sendStatus(200);
+});
+
+// 📤 SEND MESSAGE
+function send(id, text) {
+  axios.post(
+    `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+    {
+      recipient: { id },
+      message: { text }
+    }
+  );
+}
+
+// 🚀 START SERVER
+app.listen(3000, () => console.log("🤖 Messenger Slot Bot Running"));
